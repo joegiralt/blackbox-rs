@@ -19,6 +19,7 @@
 #![no_std]
 
 pub mod audio;
+mod boot;
 pub mod buttons;
 pub mod clock;
 pub mod cpu;
