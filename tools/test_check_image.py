@@ -1,4 +1,4 @@
-from check_image import check_bin, has_flash_code, LIMIT
+from check_image import check_bin, check_elf, has_flash_code, LIMIT
 import struct
 
 def image(sp, reset, size=1024):
@@ -15,4 +15,11 @@ assert check_bin(image(0x24080000, 0x08040299, LIMIT + 4))     # too large
 assert check_bin(b"\0" * 4)                                    # truncated
 assert has_flash_code({"_ZN13embassy_stm325flash5Flash5write17h0E": 1})
 assert not has_flash_code({"_ZN13embassy_stm323rcc4init17h0E": 1})
+assert has_flash_code({"_ZN71_$LT$embassy_stm32..flash..Flash$u20$as$u20$embedded_storage..Storage$GT$5write17h0E": 1})
+
+def bare_elf(paddr):  # ELF32 LE, one PT_LOAD, no sections
+    hdr = b"\x7fELF\x01\x01\x01" + bytes(9) + struct.pack("<HHIIIIIHHHHHH", 2, 40, 1, 0, 52, 0, 0, 52, 32, 1, 40, 0, 0)
+    return hdr + struct.pack("<IIIIIIII", 1, 0, 0, paddr, 4, 4, 5, 4) + bytes(4)
+
+assert any("symbol" in m for m in check_elf(bare_elf(0x08040000)))
 print("ok")

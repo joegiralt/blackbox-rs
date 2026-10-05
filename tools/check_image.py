@@ -40,6 +40,10 @@ def elf_loads(elf):
     return loads
 
 
+def has_symtab(elf):
+    return any(s[1] == 2 for s in _sections(elf))
+
+
 def elf_symbols(elf):
     secs = _sections(elf)
     syms = {}
@@ -55,7 +59,7 @@ def elf_symbols(elf):
 
 
 def has_flash_code(symbols):
-    return any("13embassy_stm325flash" in n for n in symbols)
+    return any("13embassy_stm325flash" in n or "embassy_stm32..flash" in n for n in symbols)
 
 
 def check_elf(elf):
@@ -64,7 +68,9 @@ def check_elf(elf):
     if base != BASE:
         out.append(f"linked at {base:#010x}, must be {BASE:#010x}" if base is not None
                    else "no loadable segments")
-    if has_flash_code(elf_symbols(elf)):
+    if not has_symtab(elf):
+        out.append("no symbol table, cannot verify absence of flash code")
+    elif has_flash_code(elf_symbols(elf)):
         out.append("links embassy-stm32 flash code")
     return out
 
