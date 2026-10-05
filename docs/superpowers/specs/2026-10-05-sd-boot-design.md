@@ -1,6 +1,6 @@
 # SD-card install: a Rust image the stock installer accepts
 
-Date: 2026-10-05. Status: draft for owner review (revised after adversarial review).
+Date: 2026-10-05. Status: draft for owner review (revised after two adversarial reviews and a build spike).
 
 ## Purpose
 
@@ -22,19 +22,25 @@ Applies to the original Blackbox only (STM32H743XI), not the Blackbox 2.
 | The installer is its own program with its own screen ("Blackbox Installer", "Looking for File", "Erasing") | custom-blackbox-fw `docs/hardware.md`; the stock app has no `.bin` string | High |
 | Stock `BLACKBOX.bin` is a raw image: vector table at offset 0, no header, 728,696 bytes, ends `0x080F1E78` | Read from stock 3.1.9, SHA-256 `281ae303…f1341d` | Verified |
 | The installer takes images with changed and appended bytes and no checksum fix-up | Both mod projects install such images | High |
+| The installer accepts a program that is not the Blackbox app at all | 1010music's own "Gamechanger" (Doom, 2021) ships as a 389,884-byte `BLACKBOX.BIN` installed the same way. It shares no non-zero word with stock in its first 1 KB and has a different tail, so there is no header, magic or trailer the installer could be checking | Verified from 1010music's file |
+| Reaching the installer does not depend on the installed app | Neither stock nor Gamechanger contains the installer's screen text, a `.bin` filename or a flash-unlock key. Owners returned from Gamechanger to stock with BACK + INFO, so the installer reads the buttons before any app runs | High |
+| An app that fails to start is a state 1010music expected owners to be in | Gamechanger's notes: without its `doom` folder on the card "it won't boot up" | First-party statement |
 | The installer does not pin the initial SP: 3.1.2 starts on AXI SRAM (`0x240609B0`), 3.1.9 on DTCM (`0x20020000`) | custom-blackbox-fw `docs/re-notes.md` | High |
 | The stock app sets `VTOR`, the MPU and both caches itself at start | Stock reset handler and `main` | Verified |
 | embassy-stm32 0.6 switches to HSI and stops the PLLs before reconfiguring clocks | `rcc/h.rs` | Verified |
+| The crate relinks at `0x08040000` with the changes below: `demo` becomes a 66,208-byte flat image, vector table at `0x08040000`, a library-defined `pre_init` links, stack top `0x24080000` (AXI SRAM, where Gamechanger and eight of nine stock builds put theirs) | Throwaway build spike, 2026-10-05 | Verified on host |
 | Chip, pins, clocks, SDRAM, display, touch, codec | This crate, tested on its author's unit over SWD, written for rev.Y silicon | Author's claim |
 
-Unknown:
+Unknown, and only the hardware can answer:
 
-- whether the installer accepts an image that is not derived from stock;
-- whether it writes past `0x08100000` (no published image does);
-- the CPU state it leaves at the jump (SysTick, caches, MPU, running peripherals);
-- whether BACK + INFO reaches it when the installed app hangs at boot (nobody reports trying);
-- the silicon revision of the owner's unit;
-- whether flash read-out protection is set, and where the SWD pads are.
+- the CPU state the installer leaves at the jump (SysTick, caches, MPU, running peripherals).
+  The design assumes the worst and clears all of it;
+- whether the installer consults anything persistent an app could corrupt. The images here
+  never write flash, option bytes or backup registers, and the build check enforces it;
+- whether it writes past `0x08100000` (no published image does; out of scope);
+- the silicon revision of the owner's unit (`boot_probe` reports it);
+- whether flash read-out protection is set, and where the SWD pads are (needed only for the
+  backstop).
 
 ## Design
 
@@ -78,7 +84,9 @@ A dark screen must not be the only symptom. LEDs need only GPIO, so:
   (cargo-binutils `objcopy -O binary`).
 - The recipe then runs `tools/check_image.py`, which fails the build unless: the ELF's lowest
   loaded address is exactly `0x08040000`; the initial SP is in RAM; the reset vector is inside
-  the image; the image is no larger than 768K. It prints the size next to stock's 728,696.
+  the image; the image is no larger than 768K; the ELF holds no symbol from
+  `embassy_stm32::flash` (an image that cannot write flash cannot damage the installer or
+  anything it reads). It prints the size next to stock's 728,696.
 
 ### Two images
 
@@ -96,10 +104,12 @@ Run on the owner's unit, in order. Stop at the first failure.
    Keep stock `BLACKBOX.bin` on the computer, never only on the card.
 1. Install stock 3.1.9 through the installer. Record what its screen shows.
 2. **Gate: the owner decides** whether to continue on the evidence above or wait for a tested
-   backstop (see below).
-3. Install `boot_probe`. Pass: LEDs chase; revision pattern recorded.
+   backstop (see below). The evidence supports continuing: the installer demonstrably runs
+   before, and independently of, whatever app is installed.
+3. Install `boot_probe`. Pass: LEDs chase within 2 s of power-on; revision pattern recorded.
 4. Power off; power on holding BACK + INFO. Pass: the installer appears.
-5. Install `demo`. Pass: screen, LEDs, buttons, knobs and touch respond.
+5. Install `demo`. Pass: all stage LEDs lit and the screen drawn within 3 s of power-on;
+   buttons, knobs and touch respond.
 6. Power off; BACK + INFO again; install stock 3.1.9. Pass: the unit is back to stock.
 
 Success is 3–6 passing. The README then documents the SD route as the default.
@@ -118,8 +128,8 @@ Success is 3–6 passing. The README then documents the SD route as the default.
 
 A probe in a drawer is not a backstop. It becomes one only after, on the opened unit:
 
-- the SWD pads are found (lead: Olivier Ozoux, "Inside the 1010 Music Blackbox",
-  Matrixsynth, July 2020);
+- the SWD pads are found (lead: the teardown video 1010music staff link from their own
+  forum, https://www.youtube.com/watch?v=1XRyD7wd4Uw; not yet reviewed);
 - read-out protection is checked. If it is set, writing over SWD first requires a mass erase,
   which destroys the installer for good;
 - if it is not set, the first action is to read out and keep the installer.
