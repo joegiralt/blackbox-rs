@@ -116,7 +116,7 @@ Because the installer starts the image rather than the chip's reset, `src/boot.r
 
 ### Probe route (secondary)
 
-With a debug probe on SWD, `cargo run` works as before: `.cargo/config.toml` sets the `probe-rs run --chip STM32H743XI` runner.
+**Untested with the installer present.** `.cargo/config.toml` still sets a `probe-rs run --chip STM32H743XI` runner, and the image links at `0x08040000` either way, so the build never targets the installer's region. But a reset boots the installer at `0x08000000`, not this image, and whether it then starts a probe-flashed image has not been tried.
 
 ```sh
 cargo install probe-rs-tools
@@ -126,7 +126,7 @@ cargo run --release --example demo
 cargo run --release --example audio_tone  # audio only: clocks + codec + SAI
 ```
 
-`probe-rs` writes to the same address, `0x08040000`, so the installer stays intact. The stock firmware is not restored by a probe flash; use the SD-card route above for that.
+Do not use a probe on a unit you want to keep stock-restorable until flash read-out protection has been checked: if it is set, a probe write needs a mass erase first, which removes the installer for good, and it cannot be downloaded. If read-out protection is off, read out and keep a copy of the installer region (`0x08000000`-`0x0803FFFF`) before writing anything. Do not commit or share that copy. Whether `probe-rs` erases only the sectors it writes has not been checked on a unit either.
 
 ### LED language
 
