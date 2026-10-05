@@ -23,12 +23,11 @@ embedded-graphics = "0.8"  # debug-screen text + primitives
 defmt = "1"
 cortex-m-rt = { version = "0.7", features = ["set-sp", "set-vtor"] }  # entry point; set-vtor for the offset image
 
-# Example-only (debug_screen): binary entry point, logging transport and panic handler.
+# Example-only (debug_screen): binary entry point and logging transport.
 [dev-dependencies]
 embassy-executor = { version = "0.10", features = ["platform-cortex-m", "executor-thread", "defmt"] }
 heapless = "0.8"      # stack String for formatting numbers into labels
 defmt-rtt = "1"
-panic-probe = { version = "1", features = ["print-defmt"] }
 
 [profile.release]
 debug = 2          # keep symbols for probe-rs/defmt

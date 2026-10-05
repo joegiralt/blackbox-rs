@@ -3,7 +3,7 @@ on arrival at `main` the stack, privilege, masks, SysTick, NVIC, MPU, cache and 
 import struct
 import sys
 
-from unicorn import Uc, UC_ARCH_ARM, UC_MODE_THUMB, UC_MODE_MCLASS, UC_HOOK_MEM_WRITE
+from unicorn import UcError, Uc, UC_ARCH_ARM, UC_MODE_THUMB, UC_MODE_MCLASS, UC_HOOK_MEM_WRITE
 from unicorn.arm_const import (UC_CPU_ARM_CORTEX_M7, UC_ARM_REG_CONTROL, UC_ARM_REG_MSP,
                                UC_ARM_REG_PC, UC_ARM_REG_PRIMASK, UC_ARM_REG_PSP, UC_ARM_REG_SP)
 
@@ -69,4 +69,30 @@ for off in rstr:
     vals = [v for a, v in writes if a == 0x58024400 + off]
     assert len(vals) >= 2 and vals[0] != 0 and vals[-1] == 0   # pulsed, released
 assert not any(v & (1 << 31) for a, v in writes if a == 0x5802447C)   # never AHB3 CPURST
+
+# HardFault: from a bare core it must reach the LEDs. Fresh emulator, GPIO/RCC page as RAM.
+uc = Uc(UC_ARCH_ARM, UC_MODE_THUMB | UC_MODE_MCLASS)
+uc.ctl_set_cpu_model(UC_CPU_ARM_CORTEX_M7)
+uc.mem_map(0x08000000, 0x200000); uc.mem_write(0x08040000, image)
+uc.mem_map(0x24000000, 0x80000);  uc.mem_map(0x20000000, 0x20000)
+uc.mem_map(0xE000E000, 0x1000)
+uc.mem_map(0x58020000, 0x5000)    # GPIO + RCC as plain RAM
+uc.reg_write(UC_ARM_REG_MSP, 0x20001000)
+odr_g = 0x58021800 + 0x14            # GPIOG ODR; BSRR at +0x18 also counts
+hits = []
+
+
+def on_write(_uc, _acc, addr, size, value, _d):
+    if addr in (odr_g, odr_g + 4):
+        hits.append(value)
+        if len(hits) >= 2:
+            _uc.emu_stop()
+
+
+uc.hook_add(UC_HOOK_MEM_WRITE, on_write)
+try:
+    uc.emu_start(sym["HardFault"] | 1, 0, count=100_000_000)   # never returns; the hook stops it
+except UcError:
+    pass
+assert len(hits) >= 2, "HardFault must toggle LEDs"
 print("ok")

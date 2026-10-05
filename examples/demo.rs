@@ -7,7 +7,7 @@
 use core::fmt::Write as _;
 use defmt::info;
 use embassy_executor::Spawner;
-use embassy_time::Instant;
+use embassy_time::{Instant, Timer};
 use embedded_graphics::mono_font::ascii::{FONT_6X10, FONT_8X13};
 use embedded_graphics::mono_font::MonoTextStyle;
 use embedded_graphics::pixelcolor::Rgb565;
@@ -15,13 +15,15 @@ use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{PrimitiveStyle, Rectangle};
 use embedded_graphics::text::{Baseline, Text};
 use heapless::String;
-use {defmt_rtt as _, panic_probe as _};
+use defmt_rtt as _;
 
 use blackbox_rs::buttons::{self, Button};
 use blackbox_rs::display::{FrameBuf, MAX_BACKLIGHT_PCT};
 use blackbox_rs::knobs::{Knob, Reading};
 use blackbox_rs::touch::TouchPoint;
 
+#[path = "common/fault.rs"]
+mod fault;
 #[path = "common/tone.rs"]
 mod tone;
 
@@ -35,6 +37,8 @@ defmt::timestamp!("[{=u64:08}.{=u64:06}]",
 async fn main(spawner: Spawner) {
     let mut board = blackbox_rs::init().await;
     spawner.spawn(tone::play_440(board.audio).unwrap()); // 440 Hz sine on the phones (DAC1/2)
+
+    Timer::after_millis(1000).await; // keep the six stage LEDs readable
 
     let mut prev_released = [true; buttons::COUNT];
     loop {

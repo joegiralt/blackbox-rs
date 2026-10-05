@@ -65,6 +65,22 @@ pub async fn init() -> Board {
     let p = embassy_stm32::init(clock::config());
     defmt::info!("blackbox: STM32H743XI, sysclk 399.36 MHz");
 
+    // Stage LEDs first, so a hang anywhere later still leaves a count of what completed.
+    let mut leds = leds::Leds::new([
+        p.PG9.into(),
+        p.PJ8.into(),
+        p.PB10.into(),
+        p.PB8.into(),
+        p.PB9.into(),
+        p.PK2.into(),
+        p.PA5.into(),
+        p.PJ5.into(),
+        p.PJ4.into(),
+        p.PB11.into(),
+        p.PA4.into(),
+    ]);
+    leds.set(0, true); // clocks
+
     cpu::init();
     cpu::dual_pad_fix();
 
@@ -84,20 +100,7 @@ pub async fn init() -> Board {
     let mut delay = sdram::BusyDelay(800);
     let base = sdram.init(&mut delay) as usize;
     sdram::smoke_test(base);
-
-    let leds = leds::Leds::new([
-        p.PG9.into(),
-        p.PJ8.into(),
-        p.PB10.into(),
-        p.PB8.into(),
-        p.PB9.into(),
-        p.PK2.into(),
-        p.PA5.into(),
-        p.PJ5.into(),
-        p.PJ4.into(),
-        p.PB11.into(),
-        p.PA4.into(),
-    ]);
+    leds.set(1, true);
 
     let buttons = buttons::Buttons::new([
         p.PI8.into(),
@@ -131,6 +134,7 @@ pub async fn init() -> Board {
 
     // Display first (panel power), matching the proven order — then the I2C devices.
     let display = display::Display::new(p.LTDC, p.PK7, p.TIM8, p.PJ6, base).await;
+    leds.set(2, true);
 
     // Shared I2C1 bus (touch + codec), accessed sequentially on this one executor.
     let mut i2c_config = i2c::Config::default();
@@ -139,11 +143,13 @@ pub async fn init() -> Board {
 
     let mut codec_rst = Output::new(p.PG13, Level::High, Speed::Low);
     let codec_ok = audio::init_codec(&mut i2c, &mut codec_rst).await;
+    leds.set(3, true);
 
     // Touch INT (PG12) reset/address strap: one clean drive-low, held through Touch::new,
     // which floats it — the low→float edge re-latches the operational 0x5D address.
     let touch_int = touch::bias_int_low(p.PG12.into());
     let touch = touch::Touch::new(&mut i2c, touch_int).await;
+    leds.set(4, true);
 
     // SAI1 block A as I2S stereo master TX: SCK=PE5, SD=PB2, FS=PE4, MCLK=PE2 (codec set up
     // above so it sees a configured control port before MCLK arrives). DMA1_CH0 ↔ DMA1_STREAM0.
@@ -152,6 +158,7 @@ pub async fn init() -> Board {
         sai_a, p.PE5, p.PB2, p.PE4, p.PE2, p.DMA1_CH0, audio::tx_buffer(), Irqs, audio::tx_config(),
     );
 
+    leds.set(5, true);
     defmt::info!("blackbox: board up — controls + display live, audio I2S ready");
 
     Board {

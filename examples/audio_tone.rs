@@ -12,10 +12,12 @@ use embassy_stm32::gpio::{Level, Output, Speed};
 use embassy_stm32::i2c::{self, I2c};
 use embassy_stm32::sai::{self, Sai};
 use embassy_stm32::time::Hertz;
-use {defmt_rtt as _, panic_probe as _};
+use defmt_rtt as _;
 
 use blackbox_rs::{audio, clock, Irqs};
 
+#[path = "common/fault.rs"]
+mod fault;
 #[path = "common/tone.rs"]
 mod tone;
 
