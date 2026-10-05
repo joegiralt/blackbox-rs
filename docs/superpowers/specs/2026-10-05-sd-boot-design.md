@@ -59,13 +59,20 @@ Unknown, and only the hardware can answer:
 The app does not start from reset state and cannot reset its way there (a reset returns to the
 installer). In `pre_init`, before any crate code:
 
-- set `VTOR` to `0x08040000` (cortex-m-rt `set-vtor`);
+- load the main stack pointer and set `VTOR` to `0x08040000` (cortex-m-rt `set-sp`,
+  `set-vtor`); the stock app loads its own SP, so the installer may not;
+- select the main stack in privileged mode (`CONTROL = 0`), as the stock reset handler does;
 - stop SysTick and clear its pending bit (it is not an NVIC interrupt);
 - mask every NVIC interrupt and clear pending ones;
 - disable the MPU and clear all 16 regions;
 - flush and disable the D-cache, which the crate assumes is off;
 - pulse every peripheral reset in `RCC` (AHB1–4, APB1–4), so nothing the installer started
-  (display, SD, DMA) is still running.
+  (display, SD, DMA) is still running;
+- unmask interrupts (`PRIMASK`, `FAULTMASK`, `BASEPRI`) last, in case the installer jumped
+  with them masked; embassy's timers never fire otherwise.
+
+A host test runs the built image in an emulator from its reset vector with all of this state
+deliberately dirty and checks it is clean on arrival at `main`.
 
 Clocks need nothing extra: embassy's init already handles a running PLL.
 
