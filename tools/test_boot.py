@@ -54,6 +54,7 @@ assert uc.reg_read(UC_ARM_REG_SP) > 0x24000000            # on our stack, not th
 assert mem32(0xE000ED08) == 0x08040000                     # VTOR
 assert mem32(0xE000E010) == 0                              # SysTick stopped
 assert (0xE000ED04, 1 << 25) in writes                     # PENDSTCLR
+assert (0xE000ED04, 1 << 27) in writes                     # PENDSVCLR
 for n in range(8):
     assert (0xE000E180 + 4 * n, 0xFFFFFFFF) in writes      # NVIC ICER
     assert (0xE000E280 + 4 * n, 0xFFFFFFFF) in writes      # NVIC ICPR
