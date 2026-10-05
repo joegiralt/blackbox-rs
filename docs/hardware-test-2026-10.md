@@ -34,34 +34,34 @@ In `demo`, LED 10 lights first and goes out as LED 0 lights.
 Note the firmware version the unit runs now and copy the whole SD card to the computer. Keep
 stock `BLACKBOX.bin` on the computer, never only on the card.
 
-Result:
+Result: 2026-10-05. Unit runs stock 3.0.9 (TOOLS screen). Card held stock 3.0.9 `BLACKBOX.bin` (691,452 bytes, SHA-256 `e68b5345…`), kept on the card as `BLACKBOX-stock-3.0.9.bin`. Whole card (2,184 files, 5.0 GB) copied to the computer and compared by count, size and time.
 
 ### 1. Stock through the installer
 
 Install stock 3.1.9 with BACK + INFO held at power-on. Record what the installer's screen
 shows.
 
-Result:
+Result: skipped by the owner's decision. The way back is 3.0.9, the version the unit ran, not 3.1.9.
 
 ### 2. Gate
 
 The owner decides whether to continue on the evidence in the spec or wait for a tested
 backstop.
 
-Result:
+Result: 2026-10-05. Owner said go on the evidence, no probe on hand.
 
 ### 3. `boot_probe`
 
 Install `boot_probe`. Pass: the started LED (LED 10) lights at once, a revision LED within
 about 1 s, the chase after 3 s. Record the revision LED.
 
-Result:
+Result: PASS, 2026-10-05, image `boot_probe` at 803cb06 (19,528 bytes, SHA-256 `3d36cb60…`). Installer showed "Erasing", then "installing new software", then a factory test menu (MIDI TRS loopback, clock, audio loopback, sine wave, pot input, touch; INFO steps through them). After a power cycle with no buttons held: revision LED KEYS (LED 1 = revision V, `REV_ID` 0x2003), then the chase. Screen dark, as expected. LED order on the panel: PADS, KEYS, SEQS, SONG, FX, MIX, PSET, TOOLS, REC, STOP, PLAY (LED 10, the started LED, is PLAY).
 
 ### 4. Back to the installer
 
 Power off; power on holding BACK + INFO. Pass: the installer appears.
 
-Result:
+Result: PASS, 2026-10-05. With `boot_probe` installed, BACK + INFO at power-on brought up the installer ("installer", then "Erasing").
 
 ### 5. `demo`
 
