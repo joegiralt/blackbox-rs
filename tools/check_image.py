@@ -1,4 +1,5 @@
-"""Gate for SD-installable images: linked at BASE, sane vectors, fits, no flash writes."""
+"""Gate for SD-installable images: linked at BASE, sane vectors, fits, no flash writes,
+and the crate's startup cleanup linked in."""
 import struct
 import sys
 
@@ -62,6 +63,18 @@ def has_flash_code(symbols):
     return any("13embassy_stm325flash" in n or "embassy_stm32..flash" in n for n in symbols)
 
 
+def check_startup(symbols):
+    """`__pre_init` must be the crate's, not cortex-m-rt's PROVIDEd empty default (an override
+    that wins only through linker archive order). The default is gc'd when unused."""
+    out = []
+    if "__behind_installer" not in symbols:
+        out.append("no __behind_installer: the startup cleanup is not linked")
+    pre = symbols.get("__pre_init")
+    if pre is None or pre == symbols.get("DefaultPreInit"):
+        out.append("__pre_init is cortex-m-rt's empty default, not the startup cleanup")
+    return out
+
+
 def check_elf(elf):
     out = []
     base = min(elf_loads(elf), default=None)
@@ -70,8 +83,11 @@ def check_elf(elf):
                    else "no loadable segments")
     if not has_symtab(elf):
         out.append("no symbol table, cannot verify absence of flash code")
-    elif has_flash_code(elf_symbols(elf)):
-        out.append("links embassy-stm32 flash code")
+    else:
+        symbols = elf_symbols(elf)
+        if has_flash_code(symbols):
+            out.append("links embassy-stm32 flash code")
+        out += check_startup(symbols)
     return out
 
 

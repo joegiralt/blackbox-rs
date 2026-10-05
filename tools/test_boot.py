@@ -10,8 +10,8 @@ from unicorn.arm_const import (UC_CPU_ARM_CORTEX_M7, UC_ARM_REG_BASEPRI, UC_ARM_
 
 from check_image import elf_symbols
 
-example = sys.argv[1]
-image = open("out/BLACKBOX.bin", "rb").read()
+example = sys.argv[1]                                     # usage: test_boot.py <example> [image]
+image = open(sys.argv[2] if len(sys.argv) > 2 else "out/BLACKBOX.bin", "rb").read()
 sym = elf_symbols(open(f"target/thumbv7em-none-eabihf/release/examples/{example}", "rb").read())
 
 uc = Uc(UC_ARCH_ARM, UC_MODE_THUMB | UC_MODE_MCLASS)

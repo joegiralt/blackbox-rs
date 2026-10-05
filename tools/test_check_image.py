@@ -1,4 +1,4 @@
-from check_image import check_bin, check_elf, has_flash_code, LIMIT
+from check_image import check_bin, check_elf, check_startup, has_flash_code, LIMIT
 import struct
 
 def image(sp, reset, size=1024):
@@ -22,4 +22,11 @@ def bare_elf(paddr):  # ELF32 LE, one PT_LOAD, no sections
     return hdr + struct.pack("<IIIIIIII", 1, 0, 0, paddr, 4, 4, 5, 4) + bytes(4)
 
 assert any("symbol" in m for m in check_elf(bare_elf(0x08040000)))
+assert any("0x08000000" in m for m in check_elf(bare_elf(0x08000000)))   # over the installer
+
+ours = {"__pre_init": 0x08040651, "__behind_installer": 0x0804081F}
+assert check_startup(ours) == []                                # DefaultPreInit gc'd
+assert check_startup(dict(ours, DefaultPreInit=0x08040701)) == []
+assert check_startup({"__pre_init": 0x08040651})                # no __behind_installer
+assert check_startup(dict(ours, DefaultPreInit=0x08040651))     # cortex-m-rt's empty default
 print("ok")
