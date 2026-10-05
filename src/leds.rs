@@ -79,8 +79,8 @@ pub fn started() {
     port.moder().modify(|w| w.set_moder(n, Moder::OUTPUT));
 }
 
-/// Fast-blink all LEDs forever (the rate follows the core clock: roughly 2 Hz on the 64 MHz
-/// HSI, faster once the PLL is up). For panics and faults: masks interrupts, then
+/// Fast-blink all LEDs forever (the rate follows whatever clock is running, so it says
+/// nothing about when the fault happened). For panics and faults: masks interrupts, then
 /// needs nothing initialised: enables the port clocks and forces the pins to push-pull
 /// outputs with raw register access (no HAL, no `defmt`, no allocation, cannot panic).
 pub fn panic_blink() -> ! {

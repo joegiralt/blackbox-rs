@@ -22,7 +22,7 @@ LEDs are numbered 0-10 in board order (`src/leds.rs`).
 | One LED chasing across all 11, 100 ms per step (`boot_probe`) | The image runs, timers work. Pass for step 3. |
 | LEDs 0-5 lit, then dark after 1 s, then lighting with buttons (`demo`) | All six stages reached; the LEDs now follow buttons 0-10. |
 | Stage LEDs stopped at N (`demo`: LEDs 0..N lit, nothing else) | LED N is the last stage reached (0 clocks, 1 SDRAM, 2 display, 3 codec, 4 touch, 5 audio/SAI); it hung in the work after it. LEDs 3 and 4 mean the step was reached, not that the codec or touch answered. |
-| All 11 LEDs fast-blinking together | Panic, hard fault or other unhandled exception. Roughly 2 Hz if it happened before the PLL was up, faster after. |
+| All 11 LEDs fast-blinking together | Panic, hard fault or other unhandled exception. The rate follows whatever clock was running, so it does not tell you when the fault happened. |
 | The sequence restarting every few seconds | A watchdog, probably started by the installer; the app cannot stop it. |
 
 In `demo`, LED 10 lights first and goes out as LED 0 lights.
@@ -65,8 +65,10 @@ Result:
 
 ### 5. `demo`
 
-Install `demo`. Pass: all six stage LEDs lit and the screen drawn within 3 s of power-on;
-buttons, knobs and touch respond; still responsive after 5 minutes running.
+Install `demo`. Pass: all six stage LEDs light and the screen is drawn within 3 s of
+power-on. The stage LEDs stay lit for only 1 s, then go dark and follow the buttons, so
+watch the panel from power-on. Buttons, knobs and touch respond; still responsive after
+5 minutes running.
 
 Result:
 

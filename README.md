@@ -136,7 +136,7 @@ The LEDs report startup and failure with no probe attached.
 - LED 10 alone is the "started" LED (`leds::started()`): lit first thing in `main`, before the clock bring-up, which waits on oscillators with no timeout. All dark means the image never reached `main`; LED 10 alone means it stopped in clock bring-up. It goes out when the stage LEDs take over.
 - `init()` lights one stage LED per step reached: LED 0 clocks, 1 SDRAM, 2 display, 3 codec, 4 touch, 5 audio (SAI). A hang leaves the count of what was reached. LEDs 3 and 4 mean the step ran, not that it worked: they light whether or not the codec or touch answered (`board.codec_ok` and the touch log say which).
 - In `demo` the stage LEDs go dark after 1 s, because the LEDs then follow the buttons.
-- All 11 LEDs fast-blinking together is a panic, hard fault or other unhandled exception (`leds::panic_blink()`). The rate follows the clock: roughly 2 Hz on the 64 MHz HSI, faster once the PLL is up.
+- All 11 LEDs fast-blinking together is a panic, hard fault or other unhandled exception (`leds::panic_blink()`). The rate follows whatever clock is running, so it says nothing about when the fault happened.
 - `boot_probe` shows the silicon revision on LEDs 0-3 for 3 s, then chases one LED across all 11 forever:
 
 | LED | Revision |

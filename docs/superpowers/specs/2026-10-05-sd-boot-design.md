@@ -131,8 +131,9 @@ Run on the owner's unit, in order. Stop at the first failure.
 3. Install `boot_probe`. Pass: the started LED (LED 10) lights at once, a revision LED within
    about 1 s, the chase after 3 s; revision pattern recorded.
 4. Power off; power on holding BACK + INFO. Pass: the installer appears.
-5. Install `demo`. Pass: all stage LEDs lit and the screen drawn within 3 s of power-on;
-   buttons, knobs and touch respond.
+5. Install `demo`. Pass: all stage LEDs light and the screen is drawn within 3 s of
+   power-on (the stage LEDs hold for 1 s, then follow the buttons); buttons, knobs and
+   touch respond.
 6. Power off; BACK + INFO again; install stock 3.1.9. Pass: the unit is back to stock.
 
 Success is 3–6 passing. The README then documents the SD route as the default.
