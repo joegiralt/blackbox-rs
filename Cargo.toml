@@ -12,7 +12,7 @@ categories = ["embedded", "no-std", "hardware-support"]
 exclude = ["docs/", ".cargo/"]
 
 [dependencies]
-embassy-stm32 = { version = "0.6", features = ["stm32h743xi", "memory-x", "time-driver-any", "unstable-pac", "defmt"] }
+embassy-stm32 = { version = "0.6", features = ["stm32h743xi", "time-driver-any", "unstable-pac", "defmt"] }
 embassy-time = { version = "0.5", features = ["defmt"] }
 
 cortex-m = { version = "0.7", features = ["critical-section-single-core"] }
@@ -21,11 +21,11 @@ embedded-hal = "1"  # DelayNs that Sdram::init wants
 libm = "0.2"          # atan2 for endless-encoder angle recovery
 embedded-graphics = "0.8"  # debug-screen text + primitives
 defmt = "1"
+cortex-m-rt = { version = "0.7", features = ["set-sp", "set-vtor"] }  # entry point; set-vtor for the offset image
 
 # Example-only (debug_screen): binary entry point, logging transport and panic handler.
 [dev-dependencies]
 embassy-executor = { version = "0.10", features = ["platform-cortex-m", "executor-thread", "defmt"] }
-cortex-m-rt = "0.7"
 heapless = "0.8"      # stack String for formatting numbers into labels
 defmt-rtt = "1"
 panic-probe = { version = "1", features = ["print-defmt"] }
