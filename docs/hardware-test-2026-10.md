@@ -70,7 +70,7 @@ power-on. The stage LEDs stay lit for only 1 s, then go dark and follow the butt
 watch the panel from power-on. Buttons, knobs and touch respond; still responsive after
 5 minutes running.
 
-Result:
+Result: PARTIAL, 2026-10-05, image `demo` at 803cb06 (56,288 bytes, SHA-256 `104d3e57…`), revision V unit. Stage LEDs and the debug screen came up at once; all 13 buttons (BACK and INFO on screen), all four knobs and `codec: ok` confirmed. Touch detected and reporting, but the crosshair was off: corners read (2,6), (235,4), (2,315), (237,315) for top-left, top-right, bottom-left, bottom-right, so the chip's output range is 320 down × 240 across, not the panel's pixel grid. Driver fixed to scale by the chip's configured range; retest pending. 5-minute soak not yet run.
 
 ### 6. Back to stock
 

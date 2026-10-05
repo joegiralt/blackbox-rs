@@ -2,7 +2,9 @@
 //!
 //! The I2C address latches at chip POR from the INT level (low→0x5D, high→0x14). PG12 is
 //! high-Z until firmware drives it, so we bias it low briefly then probe both addresses.
-//! The chip is portrait-native, so its axes are swapped vs. the landscape panel.
+//! The chip's X axis runs down the panel and its Y axis across it, and its output range is
+//! whatever its stored config says (320 × 240 on the unit measured), not the panel's pixel
+//! grid — so points are swapped and scaled by the range read back at start-up.
 
 use embassy_stm32::gpio::{AnyPin, Flex, Pull, Speed};
 use embassy_stm32::i2c::{I2c, Master};
@@ -33,6 +35,19 @@ pub struct TouchPoint {
 /// in per call.
 pub struct Touch {
     addr: Option<u8>,
+    range: (u16, u16),
+}
+
+/// Panel size in pixels; touch points are scaled into it.
+const PANEL: (u16, u16) = (320, 240);
+
+/// The chip's (X, Y) output range when its config cannot be read: measured on a unit.
+const DEFAULT_RANGE: (u16, u16) = (320, 240);
+
+/// Chip coordinates → panel pixels. Chip X runs down the panel, chip Y across it.
+fn to_panel(raw_x: u16, raw_y: u16, range: (u16, u16)) -> (u16, u16) {
+    let scale = |v: u16, from: u16, to: u16| ((v as u32 * to as u32) / from as u32).min(to as u32 - 1) as u16;
+    (scale(raw_y, range.1, PANEL.0), scale(raw_x, range.0, PANEL.1))
 }
 
 impl Touch {
@@ -54,14 +69,29 @@ impl Touch {
                 break;
             }
         }
+        let mut range = DEFAULT_RANGE;
         if let Some(a) = addr {
+            // X/Y output max, u16 LE each, from the config the chip already holds (0x8048).
+            let mut max = [0u8; 4];
+            if i2c.blocking_write_read(a, &[0x80, 0x48], &mut max).is_ok() {
+                let (x, y) = (u16::from_le_bytes([max[0], max[1]]), u16::from_le_bytes([max[2], max[3]]));
+                if x != 0 && y != 0 {
+                    range = (x, y);
+                }
+            }
+            defmt::info!("touch: output range {=u16} x {=u16}", range.0, range.1);
             let _ = i2c.blocking_write(a, &[0x80, 0x40, 0x00]); // normal scan mode
             Timer::after_millis(25).await;
             let _ = i2c.blocking_write(a, &[0x81, 0x4E, 0x00]); // clear status latch
         } else {
             defmt::info!("touch: GT9147 not responding on 0x5d/0x14");
         }
-        Self { addr }
+        Self { addr, range }
+    }
+
+    /// The chip's (X, Y) output range used for scaling: its stored config, or the default.
+    pub fn range(&self) -> (u16, u16) {
+        self.range
     }
 
     pub fn detected(&self) -> bool {
@@ -69,7 +99,7 @@ impl Touch {
     }
 
     /// Poll the first touch point, or `None` if no fresh data. Always clears the status
-    /// latch (the chip stops scanning otherwise). Axes are swapped to panel orientation.
+    /// latch (the chip stops scanning otherwise). Points are in panel pixels.
     pub fn poll(&self, i2c: &mut I2c<'_, Blocking, Master>) -> Option<TouchPoint> {
         let addr = self.addr?;
         let mut st = [0u8; 1];
@@ -91,10 +121,7 @@ impl Touch {
         }
         let raw_x = u16::from_le_bytes([pt[1], pt[2]]);
         let raw_y = u16::from_le_bytes([pt[3], pt[4]]);
-        Some(TouchPoint {
-            count,
-            x: raw_y, // chip raw_y → panel X
-            y: raw_x, // chip raw_x → panel Y
-        })
+        let (x, y) = to_panel(raw_x, raw_y, self.range);
+        Some(TouchPoint { count, x, y })
     }
 }

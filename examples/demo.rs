@@ -54,7 +54,7 @@ async fn main(_spawner: Spawner) {
         let knobs = board.knobs.read_all();
         let touch = board.touch.poll(&mut board.i2c);
 
-        render_debug(&mut board.display.target(), &pressed, &knobs, touch, board.codec_ok);
+        render_debug(&mut board.display.target(), &pressed, &knobs, touch, board.touch.range(), board.codec_ok);
         board.display.swap().await; // blocks ~one frame — paces the loop at the refresh rate
     }
 }
@@ -65,6 +65,7 @@ fn render_debug(
     pressed: &[bool; buttons::COUNT],
     knobs: &[Reading; 4],
     touch: Option<TouchPoint>,
+    touch_range: (u16, u16),
     codec_ok: bool,
 ) {
     let white = MonoTextStyle::new(&FONT_6X10, Rgb565::WHITE);
@@ -115,7 +116,7 @@ fn render_debug(
                 .draw(t);
         }
         None => {
-            let _ = write!(s, "touch: none");
+            let _ = write!(s, "touch: none  range {}x{}", touch_range.0, touch_range.1);
         }
     }
     let _ = Text::with_baseline(&s, Point::new(4, 116), cyan, Baseline::Top).draw(t);
