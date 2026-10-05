@@ -65,8 +65,12 @@ installer). In `pre_init`, before any crate code:
 - load the main stack pointer and set `VTOR` to `0x08040000` (cortex-m-rt `set-sp`,
   `set-vtor`); the stock app loads its own SP, so the installer may not;
 - select the main stack in privileged mode (`CONTROL = 0`), as the stock reset handler does;
+- invalidate the I-cache (the installer has just rewritten this flash);
+- clear `SHCSR` (fault handler enables, active and pending system exceptions) and `SCR`
+  (sleep-on-exit, deep sleep, send-event-on-pend);
 - stop SysTick and clear its pending bit (it is not an NVIC interrupt);
-- mask every NVIC interrupt and clear pending ones;
+- mask every NVIC interrupt; clear pending ones after the peripheral resets below, so a
+  peripheral still running cannot re-pend one;
 - disable the MPU and clear all 16 regions;
 - flush and disable the D-cache, which the crate assumes is off;
 - pulse every peripheral reset in `RCC` (AHB1–4, APB1–4), so nothing the installer started
@@ -83,20 +87,28 @@ Clocks need nothing extra: embassy's init already handles a running PLL.
 
 A dark screen must not be the only symptom. LEDs need only GPIO, so:
 
-- `init()` lights one more LED as each stage completes (clocks, SDRAM, display, I2C and codec,
+- LED 10 lights first thing in `main`, before embassy's clock bring-up (which waits on
+  oscillators with no timeout), with raw register writes. Dark means the image never reached
+  `main`; LED 10 alone means it stopped in clock bring-up.
+- `init()` lights one more LED as each stage is reached (clocks, SDRAM, display, I2C and codec,
   touch, audio). A hang is then readable from the panel as "stopped after stage N".
-- The examples replace `panic-probe` with a panic handler that blinks all LEDs. A panic with
+- The examples replace `panic-probe` with a panic handler that blinks all LEDs; HardFault and
+  every other unhandled exception do the same. A panic with
   no probe attached is otherwise a silent halt.
 
 ### Packaging
 
-- `just sd [example]` builds release and converts the ELF to a flat `out/BLACKBOX.bin`
-  (cargo-binutils `objcopy -O binary`).
+- `just sd [example]` builds release and converts the ELF to a flat image under a temporary
+  name (cargo-binutils `objcopy -O binary`); only an image that passes the check below is
+  moved to `out/BLACKBOX.bin`. Any earlier `out/BLACKBOX.bin` is deleted first, so a refused
+  build never leaves an installable file by that name.
 - The recipe then runs `tools/check_image.py`, which fails the build unless: the ELF's lowest
   loaded address is exactly `0x08040000`; the initial SP is in RAM; the reset vector is inside
   the image; the image is no larger than 768K; the ELF holds no symbol from
   `embassy_stm32::flash` (an image that cannot write flash cannot damage the installer or
-  anything it reads). It prints the size next to stock's 728,696.
+  anything it reads); the ELF has `__behind_installer` and its `__pre_init` is not
+  cortex-m-rt's empty `DefaultPreInit` (the override wins only through linker archive order).
+  It prints the size next to stock's 728,696.
 
 ### Two images
 
@@ -116,7 +128,8 @@ Run on the owner's unit, in order. Stop at the first failure.
 2. **Gate: the owner decides** whether to continue on the evidence above or wait for a tested
    backstop (see below). The evidence supports continuing: the installer demonstrably runs
    before, and independently of, whatever app is installed.
-3. Install `boot_probe`. Pass: LEDs chase within 2 s of power-on; revision pattern recorded.
+3. Install `boot_probe`. Pass: the started LED (LED 10) lights at once, a revision LED within
+   about 1 s, the chase after 3 s; revision pattern recorded.
 4. Power off; power on holding BACK + INFO. Pass: the installer appears.
 5. Install `demo`. Pass: all stage LEDs lit and the screen drawn within 3 s of power-on;
    buttons, knobs and touch respond.
@@ -133,6 +146,8 @@ Success is 3–6 passing. The README then documents the SD route as the default.
   assumptions are wrong.
 - **Image installs and the installer no longer appears:** the unit needs SWD. This is the
   case the gate exists for.
+- **The LED sequence restarts periodically:** the installer probably started a watchdog, which
+  the app cannot stop.
 
 ## What a backstop actually requires
 

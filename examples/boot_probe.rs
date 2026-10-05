@@ -3,6 +3,7 @@
 //! Touches clocks and LEDs only: no SDRAM, display, I2C, codec, SAI or flash.
 //!
 //! What to see on the panel:
+//! - LED 10 at once (`leds::started`, before clock bring-up).
 //! - For 3 s, the silicon revision on LEDs 0-3 (the crate was written for revision Y):
 //!   LED 0 = Y, LED 1 = V, LED 2 = Z, LED 3 = X, LEDs 0-3 together = unknown revision.
 //! - Then one LED chases across all 11 LEDs, 100 ms per step, forever.
