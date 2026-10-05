@@ -28,6 +28,11 @@ global_asm!(
     "movs r0, #0",
     "msr CONTROL, r0",
     "isb",
+    // The installer just rewrote this flash: drop any instruction lines it left cached.
+    "ldr r1, =0xE000EF50", // ICIALLU
+    "str r0, [r1]", // r0 is still 0
+    "dsb",
+    "isb",
     "ldr r0, =0xE000ED14", // CCR
     "ldr r1, [r0]",
     "tst r1, #0x10000", // DC
@@ -79,10 +84,9 @@ unsafe extern "C" fn __behind_installer() {
         cp.SYST.csr.write(0);
         cp.SCB.icsr.write(1 << 25); // PENDSTCLR
         cp.SCB.icsr.write(1 << 27); // PENDSVCLR
+        cp.SCB.shcsr.write(0); // fault handlers off, no system exception active or pending
+        cp.SCB.scr.write(0); // no SLEEPONEXIT, SLEEPDEEP or SEVONPEND
         for r in cp.NVIC.icer.iter().take(8) {
-            r.write(0xFFFF_FFFF);
-        }
-        for r in cp.NVIC.icpr.iter().take(8) {
             r.write(0xFFFF_FFFF);
         }
 
@@ -120,8 +124,12 @@ unsafe extern "C" fn __behind_installer() {
     pulse!(apb4rstr: set_syscfgrst, set_lpuart1rst, set_spi6rst, set_i2c4rst, set_lptim2rst,
         set_lptim3rst, set_lptim4rst, set_lptim5rst, set_comp12rst, set_vrefrst, set_sai4rst);
 
-    // SAFETY: SysTick, NVIC and pending bits are cleared above, so unmasking delivers nothing.
+    // SAFETY: plain register writes. Pending bits are cleared only now that nothing which
+    // raises them is running; with SysTick stopped and NVIC masked, unmasking delivers nothing.
     unsafe {
+        for r in cp.NVIC.icpr.iter().take(8) {
+            r.write(0xFFFF_FFFF);
+        }
         cortex_m::register::basepri::write(0);
         asm!("cpsie f", "cpsie i", options(nomem, nostack, preserves_flags));
     }

@@ -4,8 +4,9 @@ import struct
 import sys
 
 from unicorn import UcError, Uc, UC_ARCH_ARM, UC_MODE_THUMB, UC_MODE_MCLASS, UC_HOOK_MEM_WRITE
-from unicorn.arm_const import (UC_CPU_ARM_CORTEX_M7, UC_ARM_REG_CONTROL, UC_ARM_REG_MSP,
-                               UC_ARM_REG_PC, UC_ARM_REG_PRIMASK, UC_ARM_REG_PSP, UC_ARM_REG_SP)
+from unicorn.arm_const import (UC_CPU_ARM_CORTEX_M7, UC_ARM_REG_BASEPRI, UC_ARM_REG_CONTROL,
+                               UC_ARM_REG_FAULTMASK, UC_ARM_REG_MSP, UC_ARM_REG_PC,
+                               UC_ARM_REG_PRIMASK, UC_ARM_REG_PSP, UC_ARM_REG_SP)
 
 from check_image import elf_symbols
 
@@ -34,10 +35,14 @@ uc.reg_write(UC_ARM_REG_MSP, 0x20001000)
 uc.reg_write(UC_ARM_REG_PSP, 0x20002000)
 uc.reg_write(UC_ARM_REG_CONTROL, 2)
 uc.reg_write(UC_ARM_REG_PRIMASK, 1)
+uc.reg_write(UC_ARM_REG_FAULTMASK, 1)
+uc.reg_write(UC_ARM_REG_BASEPRI, 0x80)
 poke32(0xE000E010, 7)             # SysTick CSR: running, interrupting
 poke32(0xE000ED94, 5)             # MPU CTRL: ENABLE | PRIVDEFENA
 poke32(0xE000ED14, 0x00030200)    # CCR: DC | IC | STKALIGN
 poke32(0xE000ED80, 0xF003E019)    # CCSIDR for the set/way loops
+poke32(0xE000ED24, 0x00070000)    # SHCSR: Mem/Bus/UsageFault enabled
+poke32(0xE000ED10, 0x16)          # SCR: SLEEPONEXIT | SLEEPDEEP | SEVONPEND
 
 writes = []
 uc.hook_add(UC_HOOK_MEM_WRITE,
@@ -50,6 +55,11 @@ pc = uc.reg_read(UC_ARM_REG_PC)
 assert pc == main
 assert uc.reg_read(UC_ARM_REG_CONTROL) & 3 == 0
 assert uc.reg_read(UC_ARM_REG_PRIMASK) == 0
+assert uc.reg_read(UC_ARM_REG_FAULTMASK) == 0
+assert uc.reg_read(UC_ARM_REG_BASEPRI) == 0
+assert mem32(0xE000ED24) == 0                              # SHCSR
+assert mem32(0xE000ED10) == 0                              # SCR
+assert (0xE000EF50, 0) in writes                           # ICIALLU
 assert uc.reg_read(UC_ARM_REG_SP) > 0x24000000            # on our stack, not the installer's
 assert mem32(0xE000ED08) == 0x08040000                     # VTOR
 assert mem32(0xE000E010) == 0                              # SysTick stopped
@@ -69,6 +79,10 @@ for off in rstr:
     vals = [v for a, v in writes if a == 0x58024400 + off]
     assert len(vals) >= 2 and vals[0] != 0 and vals[-1] == 0   # pulsed, released
 assert not any(v & (1 << 31) for a, v in writes if a == 0x5802447C)   # never AHB3 CPURST
+order = [a for a, _ in writes]
+last_rstr = max(i for i, a in enumerate(order) if a - 0x58024400 in rstr)
+assert all(i > last_rstr for i, a in enumerate(order) if 0xE000E280 <= a < 0xE000E2A0), \
+    "NVIC pending bits cleared before the peripherals are reset"
 
 # HardFault: from a bare core it must reach the LEDs. Fresh emulator, GPIO/RCC page as RAM.
 uc = Uc(UC_ARCH_ARM, UC_MODE_THUMB | UC_MODE_MCLASS)
