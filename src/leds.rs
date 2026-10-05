@@ -62,7 +62,25 @@ const PINS: [(embassy_stm32::pac::gpio::Gpio, usize); COUNT] = {
     ]
 };
 
-/// Blink all LEDs at about 4 Hz forever. For panics and hard faults: masks interrupts, then
+/// LED lit by [`started`]: the last in board order, so stage LED 0 is never mistaken for it.
+pub const STARTED: usize = 10;
+
+/// Light LED [`STARTED`] (PA4) before anything that can hang. Call it first thing in `main`,
+/// before `embassy_stm32::init`, whose clock bring-up waits on oscillators without a timeout:
+/// a unit dark after install never started, one with only this LED stopped in clock bring-up.
+/// Raw register access like [`panic_blink`]; [`Leds::new`] drives it low again.
+pub fn started() {
+    use embassy_stm32::pac::gpio::vals::{Moder, Odr, Ot};
+    let (port, n) = PINS[STARTED];
+    embassy_stm32::pac::RCC.ahb4enr().modify(|w| w.set_gpioaen(true));
+    cortex_m::asm::delay(1_000); // clock-enable settle
+    port.odr().modify(|w| w.set_odr(n, Odr::HIGH));
+    port.otyper().modify(|w| w.set_ot(n, Ot::PUSH_PULL));
+    port.moder().modify(|w| w.set_moder(n, Moder::OUTPUT));
+}
+
+/// Fast-blink all LEDs forever (the rate follows the core clock: roughly 2 Hz on the 64 MHz
+/// HSI, faster once the PLL is up). For panics and faults: masks interrupts, then
 /// needs nothing initialised: enables the port clocks and forces the pins to push-pull
 /// outputs with raw register access (no HAL, no `defmt`, no allocation, cannot panic).
 pub fn panic_blink() -> ! {

@@ -19,7 +19,7 @@ uc.ctl_set_cpu_model(UC_CPU_ARM_CORTEX_M7)
 uc.mem_map(0x08000000, 0x200000); uc.mem_write(0x08040000, image)
 uc.mem_map(0x24000000, 0x80000);  uc.mem_map(0x20000000, 0x20000)
 uc.mem_map(0xE000E000, 0x1000)    # SCS as plain RAM
-uc.mem_map(0x58024000, 0x1000)    # RCC as plain RAM
+uc.mem_map(0x58020000, 0x5000)    # GPIO + RCC as plain RAM
 
 
 def mem32(addr):
@@ -84,29 +84,55 @@ last_rstr = max(i for i, a in enumerate(order) if a - 0x58024400 in rstr)
 assert all(i > last_rstr for i, a in enumerate(order) if 0xE000E280 <= a < 0xE000E2A0), \
     "NVIC pending bits cleared before the peripherals are reset"
 
-# HardFault: from a bare core it must reach the LEDs. Fresh emulator, GPIO/RCC page as RAM.
-uc = Uc(UC_ARCH_ARM, UC_MODE_THUMB | UC_MODE_MCLASS)
-uc.ctl_set_cpu_model(UC_CPU_ARM_CORTEX_M7)
-uc.mem_map(0x08000000, 0x200000); uc.mem_write(0x08040000, image)
-uc.mem_map(0x24000000, 0x80000);  uc.mem_map(0x20000000, 0x20000)
-uc.mem_map(0xE000E000, 0x1000)
-uc.mem_map(0x58020000, 0x5000)    # GPIO + RCC as plain RAM
-uc.reg_write(UC_ARM_REG_MSP, 0x20001000)
-odr_g = 0x58021800 + 0x14            # GPIOG ODR; BSRR at +0x18 also counts
-hits = []
+# Before embassy touches the clocks, the "started" LED (10, PA4) is lit with raw writes.
+# Anything else main reaches first (DBGMCU, RCC CR, ...) faults on unmapped memory here.
+gpioa = 0x58020000
+lit = []
 
 
-def on_write(_uc, _acc, addr, size, value, _d):
-    if addr in (odr_g, odr_g + 4):
-        hits.append(value)
-        if len(hits) >= 2:
-            _uc.emu_stop()
+def on_led(_uc, _acc, addr, size, value, _d):
+    if addr == gpioa and (value >> 8) & 3 == 1:         # MODER: PA4 becomes an output
+        lit.append(addr)
+        _uc.emu_stop()
 
 
-uc.hook_add(UC_HOOK_MEM_WRITE, on_write)
+uc.hook_add(UC_HOOK_MEM_WRITE, on_led)
 try:
-    uc.emu_start(sym["HardFault"] | 1, 0, count=100_000_000)   # never returns; the hook stops it
-except UcError:
-    pass
-assert len(hits) >= 2, "HardFault must toggle LEDs"
+    uc.emu_start(main | 1, 0, count=1_000_000)
+except UcError as e:
+    raise AssertionError(f"started LED not lit before {e} at {uc.reg_read(UC_ARM_REG_PC):#x}")
+assert lit, "started LED never lit"
+assert mem32(0x580244E0) & 1                               # GPIOA clock on
+assert mem32(gpioa + 0x14) & (1 << 4)                      # driven high
+assert not mem32(gpioa + 4) & (1 << 4)                     # push-pull
+
+
+def blinks(entry):
+    """From a bare core, `entry` must reach the LEDs. Fresh emulator, GPIO/RCC page as RAM."""
+    uc = Uc(UC_ARCH_ARM, UC_MODE_THUMB | UC_MODE_MCLASS)
+    uc.ctl_set_cpu_model(UC_CPU_ARM_CORTEX_M7)
+    uc.mem_map(0x08000000, 0x200000); uc.mem_write(0x08040000, image)
+    uc.mem_map(0x24000000, 0x80000);  uc.mem_map(0x20000000, 0x20000)
+    uc.mem_map(0xE000E000, 0x1000)
+    uc.mem_map(0x58020000, 0x5000)
+    uc.reg_write(UC_ARM_REG_MSP, 0x20001000)
+    odr_g = 0x58021800 + 0x14        # GPIOG ODR; BSRR at +0x18 also counts
+    hits = []
+
+    def on_write(_uc, _acc, addr, size, value, _d):
+        if addr in (odr_g, odr_g + 4):
+            hits.append(value)
+            if len(hits) >= 2:
+                _uc.emu_stop()
+
+    uc.hook_add(UC_HOOK_MEM_WRITE, on_write)
+    try:
+        uc.emu_start(sym[entry] | 1, 0, count=100_000_000)   # never returns; the hook stops it
+    except UcError:
+        pass
+    assert len(hits) >= 2, f"{entry} must toggle LEDs"
+
+
+blinks("HardFault")
+blinks("DefaultHandler")
 print("ok")

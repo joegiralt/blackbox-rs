@@ -17,7 +17,8 @@ use embassy_executor::Spawner;
 use embassy_stm32::pac::DBGMCU;
 use embassy_time::Timer;
 
-use blackbox_rs::{clock, leds::Leds};
+use blackbox_rs::clock;
+use blackbox_rs::leds::{self, Leds};
 
 #[path = "common/fault.rs"]
 mod fault;
@@ -43,6 +44,7 @@ fn rev_leds(rev_id: u16) -> u16 {
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
+    leds::started();
     let p = embassy_stm32::init(clock::config());
 
     let mut leds = Leds::new([

@@ -62,6 +62,7 @@ pub struct Board {
 /// return a ready SAI I2S transmitter. Streaming samples is left to the caller — see
 /// [`Board::audio`] and `examples/demo.rs`.
 pub async fn init() -> Board {
+    leds::started();
     let p = embassy_stm32::init(clock::config());
     defmt::info!("blackbox: STM32H743XI, sysclk 399.36 MHz");
 
