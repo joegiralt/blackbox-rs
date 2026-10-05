@@ -8,7 +8,7 @@
 
 use embassy_stm32::pac::rcc::vals::{Adcsel, Persel, Saisel};
 use embassy_stm32::rcc::{
-    AHBPrescaler, APBPrescaler, Hse, HseMode, Pll, PllDiv, PllMul, PllPreDiv, PllSource, Sysclk,
+    AHBPrescaler, APBPrescaler, Hse, HseMode, LsConfig, Pll, PllDiv, PllMul, PllPreDiv, PllSource, Sysclk,
     VoltageScale,
 };
 use embassy_stm32::time::Hertz;
@@ -61,6 +61,10 @@ pub fn config() -> Config {
     rcc.mux.adcsel = Adcsel::PER; // ADC kernel clock = PER = HSI
     rcc.mux.persel = Persel::HSI;
     rcc.mux.sai1sel = Saisel::PLL2_P; // SAI1/2 kernel clock = 12.288 MHz
+    // No RTC. embassy's default (LSI as RTC clock) finds RTCSEL unset on every boot and pulses
+    // BDCR.BDRST, wiping the backup domain. Off, it resets only if something else enabled the
+    // RTC or LSE; it still sets PWR_CR1.DBP.
+    rcc.ls = LsConfig::off();
 
     config
 }

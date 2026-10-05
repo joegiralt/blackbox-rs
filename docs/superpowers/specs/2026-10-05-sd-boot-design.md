@@ -36,7 +36,10 @@ Unknown, and only the hardware can answer:
 - the CPU state the installer leaves at the jump (SysTick, caches, MPU, running peripherals).
   The design assumes the worst and clears all of it;
 - whether the installer consults anything persistent an app could corrupt. The images here
-  never write flash, option bytes or backup registers, and the build check enforces it;
+  never write flash or option bytes, and the build check enforces that. The clock config
+  (`rcc.ls` off) keeps embassy from resetting the backup domain when nothing has configured
+  the RTC or LSE; that holds by configuration, not by the check, and embassy still sets
+  `PWR_CR1.DBP`;
 - whether it writes past `0x08100000` (no published image does; out of scope);
 - the silicon revision of the owner's unit (`boot_probe` reports it);
 - whether flash read-out protection is set, and where the SWD pads are (needed only for the
