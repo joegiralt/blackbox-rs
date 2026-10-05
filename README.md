@@ -28,7 +28,7 @@ embassy-time = "0.5"
 
 use embassy_executor::Spawner;
 use blackbox_rs::buttons::Button;
-use {defmt_rtt as _, panic_probe as _};
+use defmt_rtt as _;
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
@@ -44,6 +44,8 @@ async fn main(_spawner: Spawner) {
 ```
 
 `init()` returns a `Board { display, leds, buttons, knobs, touch, i2c, codec_ok, audio }`.
+
+A binary must also supply its own `#[panic_handler]` (and, for a visible fault, a `HardFault` handler). On an SD-installed unit there is no probe to read a panic message, so call `blackbox_rs::leds::panic_blink()` from both; the examples share one implementation in `examples/common/fault.rs`. The crate links at `0x08040000` through its own `memory.x` (see Memory layout), and your binary needs the usual `-Tlink.x` rustflag from `.cargo/config.toml`.
 
 ## Using the peripherals
 
@@ -76,21 +78,75 @@ board.audio.write(&buf).await.unwrap();
 
 `Button` and `Knob` have `::ALL`, `.index()` and `.label()`.
 
-## Running the examples
+## Install from the SD card
+
+This is the default route and needs no debug probe. It works the way 1010music's own firmware updates do: the stock installer reads `BLACKBOX.bin` from the card and writes it to flash.
+
+**Original Blackbox only, not the Blackbox 2.** This project is unofficial: it is not affiliated with, endorsed by or supported by 1010music, and running modified firmware is at your own risk. Keep a copy of the stock `BLACKBOX.bin` on a computer before you start; it is available from <https://1010music.com/downloads>.
+
+Tools, once:
 
 ```sh
 rustup target add thumbv7em-none-eabihf
-cargo install probe-rs-tools
-
-cargo run --release --example demo        # full board: controls, panel, 440 Hz tone
-cargo run --release --example audio_tone  # audio only — clocks + codec + SAI
+rustup component add llvm-tools
+cargo install cargo-binutils
+# and `just` from your package manager
 ```
 
-A debug probe on SWD; `.cargo/config.toml` sets the `probe-rs run --chip STM32H743XI` runner.
+Build and check an image:
+
+```sh
+just sd boot_probe   # recommended first image: clocks and LEDs only
+just sd demo         # full board: controls, panel, 440 Hz tone
+```
+
+`just sd <example>` writes `out/BLACKBOX.bin` and runs `tools/check_image.py` on it (linked at `0x08040000`, sane vectors, at most 768K, no embassy-stm32 flash code). It refuses an image that fails.
+
+Install: copy `out/BLACKBOX.bin` to the root of the microSD card, put the card in the unit, and power on while holding **BACK + INFO**. To return to stock, do the same with 1010music's own `BLACKBOX.bin`.
+
+Status: this route has been verified on the host (build, image check, emulator boot test) but has not yet been run on real hardware. Images are capped at 768K (the end of flash bank 1); whether the installer writes past that is untested. The evidence behind the route is in [`docs/superpowers/specs/2026-10-05-sd-boot-design.md`](docs/superpowers/specs/2026-10-05-sd-boot-design.md).
+
+`just test` runs the image-check unit tests, builds the demo image and boots it in an emulator from dirty installer state; it needs a `.venv` with `unicorn==2.1.4`.
+
+### Memory layout
+
+1010music's installer lives in flash at `0x08000000`-`0x0803FFFF`. It is not part of any downloadable firmware file, so if it is overwritten there is no SD-card route back to stock. This crate therefore links at `0x08040000` (`memory.x`: 768K of flash, 512K AXI SRAM) and its `build.rs` puts that `memory.x` on the linker path. A downstream `memory.x` that links lower will overwrite the installer when flashed with a probe, and `just sd` refuses such an image. Never link below `0x08040000`.
+
+Because the installer starts the image rather than the chip's reset, `src/boot.rs` runs a `__pre_init` that returns the core to a clean state (stack, interrupts, MPU, D-cache, peripheral resets) before `main`.
+
+### Probe route (secondary)
+
+With a debug probe on SWD, `cargo run` works as before: `.cargo/config.toml` sets the `probe-rs run --chip STM32H743XI` runner.
+
+```sh
+cargo install probe-rs-tools
+
+cargo run --release --example boot_probe
+cargo run --release --example demo
+cargo run --release --example audio_tone  # audio only: clocks + codec + SAI
+```
+
+`probe-rs` writes to the same address, `0x08040000`, so the installer stays intact. The stock firmware is not restored by a probe flash; use the SD-card route above for that.
+
+### LED language
+
+The LEDs report startup and failure with no probe attached.
+
+- `init()` lights one stage LED per completed step: LED 0 clocks, 1 SDRAM, 2 display, 3 codec, 4 touch, 5 audio (SAI). A hang leaves the count of what finished.
+- All 11 LEDs blinking together at about 4 Hz is a panic or hard fault (`leds::panic_blink()`).
+- `boot_probe` shows the silicon revision on LEDs 0-3 for 3 s, then chases one LED across all 11 forever:
+
+| LED | Revision |
+|-----|----------|
+| 0 | Y (what this crate was written for) |
+| 1 | V |
+| 2 | Z |
+| 3 | X |
+| 0-3 together | unknown |
 
 ## Hardware notes
 
-- **rev.Y erratum ES0392** — D-cache stays off; the MPU marks SDRAM + D2 SRAM non-cacheable so LTDC/SAI DMA stay coherent without maintenance. Use Cargo feature `stm32h743` (not `stm32h743v`, which hangs ADC power-up).
+- **rev.Y erratum ES0392** — D-cache stays off; the MPU marks SDRAM + D2 SRAM non-cacheable so LTDC/SAI DMA stay coherent without maintenance. The crate uses embassy-stm32 feature `stm32h743xi` (not `stm32h743v`, which hangs ADC power-up).
 - **Backlight capped at 35%** (`display::MAX_BACKLIGHT_PCT`) — boost-regulator thermal limit; `set_backlight` clamps.
 - **Touch** latches its I2C address at the chip's own power-on from INT (PG12): `0x5D` operational / `0x14` degraded. It re-latches only on a real power cycle — if the log shows `@ 0x14`, power-cycle the board.
 - Clocks: HSE 6.144 MHz → PLL1 399.36 MHz sysclk, PLL2 12.288 MHz SAI (256 × 48 kHz), PLL3 6.4 MHz LTDC.
