@@ -61,6 +61,9 @@ for n in range(8):
 assert mem32(0xE000ED94) == 0                              # MPU off
 assert [v for a, v in writes if a == 0xE000ED98] == list(range(16))   # RNR 0..15
 assert mem32(0xE000ED14) & (1 << 16) == 0                  # D-cache off
+ccsidr = 0xF003E019
+sets, ways = ((ccsidr >> 13) & 0x7FFF) + 1, ((ccsidr >> 3) & 0x3FF) + 1
+assert sum(a == 0xE000EF74 for a, _ in writes) == sets * ways   # DCCISW, every set and way
 rstr = [0x7C, 0x80, 0x84, 0x88, 0x8C, 0x90, 0x94, 0x98, 0x9C]
 for off in rstr:
     vals = [v for a, v in writes if a == 0x58024400 + off]

@@ -1,25 +1,60 @@
 //! Clean slate behind 1010music's installer.
 //!
 //! Images at 0x08040000 are started by the stock installer, not from reset, and its exit state
-//! is unknown: maybe on its process stack, unprivileged, interrupts masked, SysTick running,
-//! MPU and D-cache on, peripherals mid-transfer. A system reset only returns to the installer,
-//! so `__pre_init` undoes all of that by hand before cortex-m-rt initialises RAM and calls
-//! `main`. `tools/test_boot.py` boots the built image in an emulator with exactly that state.
+//! is unknown: maybe on its process stack, interrupts masked, SysTick running, MPU and D-cache
+//! on, peripherals mid-transfer. A system reset only returns to the installer, so `__pre_init`
+//! undoes all of that by hand before cortex-m-rt initialises RAM and calls `main`.
+//! `tools/test_boot.py` boots the built image in an emulator with exactly that state.
+//! An unprivileged jump cannot be recovered here: Reset's VTOR store would already fault.
 
 use core::arch::{asm, global_asm};
 
 use embassy_stm32::pac;
 
-// The installer may jump on its own process stack or unprivileged; the stock app's reset
-// handler defends the same way. cortex-m-rt has already loaded MSP (`set-sp`).
+// Registers only, before any Rust stack frame exists. cortex-m-rt has already loaded MSP
+// (`set-sp`) and written VTOR (`set-vtor`).
+//
+// D-cache: clearing CCR.DC and then cleaning by set/way writes back every dirty line, so a
+// stack store between the two would be overwritten by a stale copy of the installer's stack.
+// Cortex-M7 L1 D-cache is always 4-way with 32-byte lines; only the set count is read.
 global_asm!(
     ".section .text.__pre_init",
     ".global __pre_init",
     ".thumb_func",
     "__pre_init:",
+    // Our vector table is live from here; IRQs stay masked until NVIC is cleared. Not emulated.
+    "cpsid i",
+    // Leave the installer's process stack.
     "movs r0, #0",
     "msr CONTROL, r0",
     "isb",
+    "ldr r0, =0xE000ED14", // CCR
+    "ldr r1, [r0]",
+    "tst r1, #0x10000", // DC
+    "beq 2f",
+    "bic r1, r1, #0x10000",
+    "dsb",
+    "str r1, [r0]",
+    "dsb",
+    "isb",
+    "movs r1, #0",
+    "str r1, [r0, #0x70]", // CSSELR = L1 data
+    "dsb",
+    "isb",
+    "ldr r1, [r0, #0x6C]", // CCSIDR
+    "ubfx r1, r1, #13, #15", // sets - 1
+    "lsls r1, r1, #5",
+    "0:",
+    "orr r2, r1, #0xC0000000", // way 3
+    "1:",
+    "str r2, [r0, #0x260]", // DCCISW
+    "subs r2, r2, #0x40000000", // borrows after way 0
+    "bcs 1b",
+    "subs r1, r1, #32", // borrows after set 0
+    "bcs 0b",
+    "dsb",
+    "isb",
+    "2:",
     "b __behind_installer",
 );
 
@@ -31,12 +66,13 @@ macro_rules! pulse {
     }};
 }
 
-/// Runs privileged on MSP, before RAM is initialised: no statics, no `defmt`, no panics.
+/// Runs privileged on MSP with the D-cache off and IRQs masked, before RAM is initialised:
+/// no statics, no `defmt`, no panics.
 #[no_mangle]
 unsafe extern "C" fn __behind_installer() {
     // SAFETY: nothing else runs yet. `steal`'s one static write lands in `.bss`, which
     // `Reset` zeroes right after this returns.
-    let mut cp = unsafe { cortex_m::Peripherals::steal() };
+    let cp = unsafe { cortex_m::Peripherals::steal() };
 
     // SAFETY: plain register writes, privileged, no live users of SysTick/NVIC/MPU yet.
     unsafe {
@@ -58,11 +94,6 @@ unsafe extern "C" fn __behind_installer() {
         }
         cortex_m::asm::dsb();
         cortex_m::asm::isb();
-    }
-
-    // Clean then disable: dirty lines the installer left reach memory first.
-    if cortex_m::peripheral::SCB::dcache_enabled() {
-        cp.SCB.disable_dcache(&mut cp.CPUID);
     }
 
     // H743 peripherals only: the PAC's RCC block covers every H7, and fields for parts this
